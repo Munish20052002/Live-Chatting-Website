@@ -15,15 +15,24 @@ connectDB();
 
 // Middleware
 app.use(helmet());
-// CORS configuration - allow all origins in development, specific origins in production
-if (process.env.FRONTEND_URL) {
-  app.use(cors({
-    origin: process.env.FRONTEND_URL.split(','), // Can specify multiple origins separated by commas
-    credentials: true
-  }));
-} else {
-  app.use(cors()); // Allow all origins (good for development)
-}
+// CORS configuration - explicitly handle preflight and allowed origins
+const allowedOriginsEnv = process.env.FRONTEND_URL;
+const allowedOrigins = allowedOriginsEnv ? allowedOriginsEnv.split(',') : undefined;
+
+const corsOptions = {
+	origin: function (origin, callback) {
+		// Allow non-browser requests (no Origin) and allow all in dev when no FRONTEND_URL set
+		if (!origin || !allowedOrigins) return callback(null, true);
+		if (allowedOrigins.includes(origin)) return callback(null, true);
+		return callback(new Error('Not allowed by CORS'));
+	},
+	credentials: true,
+	methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+	allowedHeaders: ['Content-Type','Authorization'],
+	optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 

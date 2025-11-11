@@ -10,6 +10,7 @@ const errorHandler = require('./middleware/errorHandler');
 const jwt = require('jsonwebtoken');
 const http = require('http');
 const { Server } = require('socket.io');
+const Message = require('./models/Message');
 
 const app = express();
 const server = http.createServer(app);
@@ -71,20 +72,57 @@ io.on('connection', (socket) => {
 	}
 
 	// Client announces they joined with a name
-	socket.on('joinChat', (name) => {
+	socket.on('joinChat', async (name) => {
 		const safeName = typeof name === 'string' && name.trim() ? name.trim() : (nameFromToken || 'Guest');
 		socketIdToName.set(socket.id, safeName);
-		// Broadcast to others
-		socket.broadcast.emit('userJoined', { name: safeName });
-		// Optionally, acknowledge to the sender (not required by current UI)
+
+		try {
+			const historyDocs = await Message.find({})
+				.sort({ createdAt: 1 })
+				.limit(200)
+				.lean();
+
+			const history = historyDocs.map((doc) => ({
+				text: doc.text,
+				sender: doc.sender,
+				time: doc.time,
+			}));
+
+			socket.emit('chatHistory', history);
+		} catch (err) {
+			console.error('Failed to load chat history', err);
+			socket.emit('chatHistory', []);
+		}
+
+		// Notify everyone (including the joining user) so they see a consistent system message
+		io.emit('userJoined', { name: safeName });
 	});
 
 	// Relay messages to everyone else
-	socket.on('sendMessage', (msg) => {
+	socket.on('sendMessage', async (msg) => {
 		// Expect msg = { text, sender, time }
 		// Basic shape guard
 		if (!msg || typeof msg.text !== 'string') return;
-		socket.broadcast.emit('receiveMessage', msg);
+
+		const senderFromSocket = socketIdToName.get(socket.id);
+		const sanitizedMessage = {
+			text: msg.text.trim(),
+			sender:
+				(typeof msg.sender === 'string' && msg.sender.trim()) ||
+				senderFromSocket ||
+				'Unknown',
+			time:
+				(typeof msg.time === 'string' && msg.time.trim()) ||
+				new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+		};
+
+		try {
+			await Message.create(sanitizedMessage);
+		} catch (err) {
+			console.error('Failed to save chat message', err);
+		}
+
+		socket.broadcast.emit('receiveMessage', sanitizedMessage);
 	});
 
 	// Handle disconnect

@@ -30,6 +30,8 @@ exports.register = async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
+      token, // top-level for frontend convenience
+      name: user.name,
       data: {
         _id: user._id,
         name: user.name,
@@ -91,6 +93,8 @@ exports.login = async (req, res, next) => {
     res.json({
       success: true,
       message: 'Login successful',
+      token, // top-level for frontend convenience
+      name: user.name,
       data: {
         _id: user._id,
         name: user.name,
